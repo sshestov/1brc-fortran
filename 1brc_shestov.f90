@@ -9,7 +9,6 @@ interface
 
 integer function open(pathname,flags) bind(c,name='open')
   use iso_c_binding
-  !type(c_ptr), intent(in) :: pathname
   type(c_ptr), value, intent(in) :: pathname
   integer(c_int), value :: flags
 end function open
@@ -128,7 +127,7 @@ do i=1,Nchunks-1
 end do
 ch_start(1)=1
 ch_end(Nchunks)=flen
-ch_end(Nchunks)=findloc(i11(flen-100:),scode,DIM=1)-1 + flen-100
+!ch_end(Nchunks)=findloc(i11(flen-100:),scode,DIM=1)-1 + flen-100         ;  write(*,*) "Stripping a little bit from the end (~100 bytes); don't forget to process that"
 print '(A,*(I13))', "Start: ",ch_start
 print '(A,*(I13))', "Stop:  ",ch_end
 !do i=1,Nchunks
@@ -137,20 +136,21 @@ print '(A,*(I13))', "Stop:  ",ch_end
 !end do
 
 
-pos_s=1 ; pos_nl=0 ; i=1 ;  j=1 ; iostat=1 !; cpos = 1
+pos_s=1 ; pos_nl=0 ; i=1 ;  j=1 ; ! cpos = 1
 write(*,*) "******************************************* Running ******************************************* "
-!$OMP PARALLEL DO REDUCTION(min:temp_min_i) REDUCTION(max:temp_max_i) REDUCTION(+:temp_cum_i,stations_cnt) PRIVATE(cpos,pos_s,pos_nl,str,i,id,temp,tempi,d2p,d3p,d4p,m1p,name_i16) DEFAULT(shared) SCHEDULE(DYNAMIC)
+!$OMP PARALLEL DO REDUCTION(min:temp_min_i) REDUCTION(max:temp_max_i) REDUCTION(+:temp_cum_i,stations_cnt) PRIVATE(cpos,pos_s,pos_s1,pos_nl,str,i,id,temp,tempi,d2p,d3p,d4p,m1p) DEFAULT(shared) SCHEDULE(DYNAMIC)
 do chunk_num=1,Nchunks
   cpos = ch_start(chunk_num)
   do 
     pos_s=findloc(i11(cpos:),scode,DIM=1)-1      !! now pos_s means offset and ranges 0..??; before it was 1..?? without -1 in definition
     !pos_s = findsc(i11(cpos:cpos+63))-1
+    !pos_s = findsc2(i11(cpos:cpos+31))-1
     !pos_s1 = findsc_ch(x11(cpos:cpos+63))-1
     !write(*,'(A, I4)',advance='NO') "Position of ';' (OLD:NEW): ", pos_s
     !write(*,'(I4)') pos_s1
     !if (pos_s /= pos_s1) print*, x11(cpos:cpos+pos_s-1) , "<-->", x11(cpos:cpos+pos_s1-1)
     d2p = merge(1,0,i11(cpos+pos_s+2) == dcode)  ;  d3p = merge(1,0,i11(cpos+pos_s+3) == dcode)  ;  d4p = merge(1,0,i11(cpos+pos_s+4) == dcode)  ;  m1p = merge(1,0,i11(cpos+pos_s+1) == mcode)
-    pos_nl = d2p*(pos_s+4) + d3p*(pos_s+5) + d4p*(pos_s+6)                         !! offset of the NEW_LINE symbol counted from the cpos
+    pos_nl = d2p*(pos_s+4) + d3p*(pos_s+5) + d4p*(pos_s+6)                         !! offset of the NEW_LINE symbol counted from cpos
                                                             
     tempi = d2p*(                                           (i11(cpos+pos_s+1)-zcode)*10 + (i11(cpos+pos_s+3)-zcode)  ) + &   ! dot is the 2nd symbol => temp has a form of 1.2
             d3p*( (1.-m1p)*((i11(cpos+pos_s+1)-zcode)*100 + (i11(cpos+pos_s+2)-zcode)*10 + (i11(cpos+pos_s+4)-zcode))   + &   ! dot is the 3rd symbol => temp has a form of 12.4 or -4.5 
@@ -226,7 +226,7 @@ contains
 !!  integer(2) :: ha
 !!
 !!  ha=0
-!!  !a hash function from github below. convert char to 8-bit integer 1_1; int(X,2) - convert it to 16-bit integer
+!!  !a hash function from github above. convert char to 8-bit integer 1_1; int(X,2) - convert it to 16-bit integer
 !!  do i=1,size(array)
 !!    ha = ieor( ior(shiftl(ha,2),shiftr(ha,14)) , int(transfer(array(i),1_1),2) )
 !!  end do 
@@ -293,16 +293,13 @@ integer function findsc(arr)
     integer(1) :: r(16)
     logical(1) :: z
     integer :: i, k 
-
     !! comment out since we use arr instead of unknown-length string
     !if (mod(len(str),16) /= 0) then
     !    error stop "Length should be multiple of 16"
     !end if
-
     do i = 1, size(arr), 16              !len(str), 16
         r = arr(i:i+15)                  !r = transfer(str(i:i+16),r)
-        ! search for semicolon
-        z = .false.
+        z = .false.                      ! search for semicolon
         !$omp simd simdlen(16) reduction(.or.: z)
         do k = 1, 16
             z = z .or. (r(k) == sc)
@@ -340,5 +337,21 @@ integer function findsc_ch(str)
     end do
     findsc_ch = 0                      ! semicolon not found
 end function findsc_ch
+
+integer function findsc2(arr)
+  implicit none
+  integer(kind=1), dimension(:), intent(in) :: arr  
+  integer(1), parameter :: sc = 59 !iachar(';',1)
+  integer p,i
+  p=size(arr)
+  do i=1,p
+    if (arr(i) == sc) exit
+  end do
+  !if (i > p) then
+  !  findsc2=0
+  !else
+    findsc2=i
+  !end if
+end function findsc2
 
 end Program
